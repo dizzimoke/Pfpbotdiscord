@@ -1,0 +1,5 @@
+{
+  "name": "Anime GIF & Banner Auto-Poster",
+  "description": "Automated Discord webhook bot that posts anime GIFs and banners with rate-limit handling.",
+  "requestFramePermissions": []
+}

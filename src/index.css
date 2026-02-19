@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Fix mobile viewport height issues */
+html, body {
+  height: 100%;
+}
+
+body {
+  /* Use dynamic viewport height for mobile browsers */
+  min-height: 100dvh;
+  /* Prevent horizontal scroll but allow vertical */
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Prevent scroll chaining/bouncing if needed, though usually handled by browser */
+  overscroll-behavior-y: none;
+}
+
+/* Disable smooth scrolling on mobile to prevent fighting/jank */
+@media (max-width: 768px) {
+  html {
+    scroll-behavior: auto !important;
+  }
+}
