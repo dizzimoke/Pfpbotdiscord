@@ -1,163 +1,277 @@
-import { useState } from 'react';
-import { Key, Webhook, Save, Lock, Activity, Play, Square } from 'lucide-react';
+// src/App.tsx
+import { useMemo, useState } from "react";
 
 export default function App() {
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [giphyKey, setGiphyKey] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [giphyKey, setGiphyKey] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [interval, setInterval] = useState(2);
-  const [status, setStatus] = useState('');
-  const [loading, setLoading] = useState(false);
+
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const endpoint = import.meta.env.VITE_SETTINGS_ENDPOINT as string | undefined;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+  const canSave = useMemo(() => {
+    return Boolean(
+      endpoint &&
+        anonKey &&
+        adminPassword.trim().length > 0 &&
+        webhookUrl.trim().length > 0 &&
+        giphyKey.trim().length > 0 &&
+        interval >= 1
+    );
+  }, [endpoint, anonKey, adminPassword, webhookUrl, giphyKey, interval]);
 
   const handleSave = async () => {
-    if (!webhookUrl || !giphyKey || !adminPassword) {
-      setStatus('Error: Missing required fields (Webhook, GIPHY Key, Admin Password)');
+    setStatus("");
+    if (!endpoint) {
+      setStatus("❌ Missing VITE_SETTINGS_ENDPOINT in Vercel env.");
+      return;
+    }
+    if (!anonKey) {
+      setStatus("❌ Missing VITE_SUPABASE_ANON_KEY in Vercel env.");
+      return;
+    }
+    if (!adminPassword.trim()) {
+      setStatus("❌ Admin password is required.");
       return;
     }
 
-    setLoading(true);
-    setStatus('Saving settings...');
+    setSaving(true);
+    setStatus("Saving...");
 
     try {
-      const endpoint = import.meta.env.VITE_SETTINGS_ENDPOINT;
-      if (!endpoint) {
-        throw new Error('VITE_SETTINGS_ENDPOINT is not defined');
-      }
-
       const res = await fetch(endpoint, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'x-admin-password': adminPassword
+          "Content-Type": "application/json",
+
+          // ✅ REQUIRED for calling Supabase Edge Functions from the browser
+          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
+
+          // ✅ Your extra protection
+          "x-admin-password": adminPassword,
         },
         body: JSON.stringify({
           discord_webhook_url: webhookUrl,
           giphy_api_key: giphyKey,
           enabled,
-          combo_interval_minutes: interval
-        })
+          combo_interval_minutes: interval,
+        }),
       });
 
-      const data = await res.json();
+      // Read raw text first so we can show real errors even if it's not JSON
+      const raw = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        // keep raw
+      }
 
       if (res.ok) {
-        setStatus('✅ Settings saved! Bot will run on next schedule.');
+        setStatus("✅ Settings saved! Bot will run on next schedule.");
       } else {
-        setStatus(`❌ Error: ${data.error || 'Unknown error'}`);
+        // Prefer backend error message
+        const msg =
+          data?.error ||
+          data?.message ||
+          raw ||
+          `Request failed (HTTP ${res.status})`;
+        setStatus(`❌ ${msg}`);
       }
     } catch (err: any) {
-      setStatus(`❌ Network Error: ${err.message}`);
+      setStatus(`❌ Network error: ${err?.message || String(err)}`);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-200 p-8 font-sans selection:bg-indigo-500/30">
-      <div className="max-w-md mx-auto space-y-8">
-        
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Anime Auto-Poster</h1>
-          <p className="text-neutral-400 mt-1">Supabase + Vercel Serverless Bot</p>
-        </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0b0b12",
+        color: "#eaeaf2",
+        padding: 24,
+        fontFamily:
+          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial',
+      }}
+    >
+      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+        <h1 style={{ fontSize: 44, lineHeight: 1.05, margin: "10px 0 6px" }}>
+          Anime Auto-Poster
+        </h1>
+        <p style={{ opacity: 0.7, marginTop: 0 }}>
+          Automated Discord webhook bot for anime GIFs & banners
+        </p>
 
-        {/* Configuration */}
-        <div className="bg-neutral-900/50 border border-white/5 rounded-2xl p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <Key className="w-5 h-5 text-indigo-400" />
-            Configuration
-          </h2>
-          
-          <div className="space-y-4">
+        <div
+          style={{
+            marginTop: 18,
+            padding: 18,
+            borderRadius: 18,
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div style={{ display: "grid", gap: 14 }}>
             <div>
-              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5">
-                Admin Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-500" />
-                <input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="Required to save settings"
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5">
-                Discord Webhook URL
-              </label>
-              <div className="relative">
-                <Webhook className="absolute left-3 top-2.5 w-4 h-4 text-neutral-500" />
-                <input
-                  type="password"
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  placeholder="https://discord.com/api/webhooks/..."
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700"
-                />
-              </div>
+              <label style={{ fontSize: 12, opacity: 0.7 }}>ADMIN PASSWORD</label>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Admin Password"
+                style={inputStyle}
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5">
-                GIPHY API Key
+              <label style={{ fontSize: 12, opacity: 0.7 }}>
+                DISCORD WEBHOOK URL
               </label>
-              <div className="relative">
-                <Key className="absolute left-3 top-2.5 w-4 h-4 text-neutral-500" />
-                <input
-                  type="password"
-                  value={giphyKey}
-                  onChange={(e) => setGiphyKey(e.target.value)}
-                  placeholder="GIPHY API Key"
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700"
-                />
+              <input
+                type="password"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/..."
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, opacity: 0.7 }}>GIPHY API KEY</label>
+              <input
+                type="password"
+                value={giphyKey}
+                onChange={(e) => setGiphyKey(e.target.value)}
+                placeholder="GIPHY API Key"
+                style={inputStyle}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                paddingTop: 6,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700 }}>Bot Enabled</div>
+                <div style={{ fontSize: 12, opacity: 0.65 }}>
+                  Turn on/off posting
+                </div>
               </div>
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+                style={{ transform: "scale(1.3)" }}
+              />
             </div>
 
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm font-medium text-neutral-300">Bot Enabled</span>
-              <button 
-                onClick={() => setEnabled(!enabled)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm font-medium text-neutral-300">Interval (Minutes)</span>
-              <input 
-                type="number" 
-                min="1" 
-                max="60" 
-                value={interval} 
-                onChange={(e) => setInterval(parseInt(e.target.value) || 2)}
-                className="w-16 bg-neutral-950 border border-neutral-800 rounded-lg py-1 px-2 text-center text-sm"
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700 }}>Interval (Minutes)</div>
+                <div style={{ fontSize: 12, opacity: 0.65 }}>
+                  Must match your cron schedule
+                </div>
+              </div>
+              <input
+                type="number"
+                min={1}
+                value={interval}
+                onChange={(e) => setInterval(Number(e.target.value))}
+                style={{
+                  ...inputStyle,
+                  width: 90,
+                  textAlign: "center",
+                  padding: "10px 10px",
+                }}
               />
             </div>
 
             <button
               onClick={handleSave}
-              disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mt-4"
+              disabled={!canSave || saving}
+              style={{
+                marginTop: 6,
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: !canSave || saving ? "rgba(120,90,255,0.25)" : "#5a3dff",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: !canSave || saving ? "not-allowed" : "pointer",
+              }}
             >
-              {loading ? <Activity className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Save Settings
+              {saving ? "Saving..." : "Save Settings"}
             </button>
 
             {status && (
-              <div className={`text-center text-sm font-medium mt-4 p-3 rounded-lg ${status.includes('Error') ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 12,
+                  background:
+                    status.startsWith("✅")
+                      ? "rgba(0, 200, 120, 0.12)"
+                      : "rgba(255, 70, 70, 0.12)",
+                  border: status.startsWith("✅")
+                    ? "1px solid rgba(0, 200, 120, 0.22)"
+                    : "1px solid rgba(255, 70, 70, 0.22)",
+                  color: status.startsWith("✅") ? "#6ff0b2" : "#ff9b9b",
+                  fontWeight: 700,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
                 {status}
               </div>
             )}
+
+            <div style={{ fontSize: 12, opacity: 0.6, marginTop: 6 }}>
+              Tip: If you still get errors, open Supabase → Edge Functions → update-settings → Logs
+              and paste the error text here.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 18, fontSize: 12, opacity: 0.6 }}>
+          <div>Using endpoint:</div>
+          <div style={{ wordBreak: "break-all", opacity: 0.8 }}>
+            {endpoint || "(missing VITE_SETTINGS_ENDPOINT)"}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  marginTop: 8,
+  padding: "12px 12px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.10)",
+  background: "rgba(0,0,0,0.35)",
+  color: "#fff",
+  outline: "none",
+};
