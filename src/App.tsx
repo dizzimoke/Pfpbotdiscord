@@ -207,23 +207,79 @@ export default function App() {
               />
             </div>
 
-            <button
-              onClick={handleSave}
-              disabled={!canSave || saving}
-              style={{
-                marginTop: 6,
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: !canSave || saving ? "rgba(120,90,255,0.25)" : "#5a3dff",
-                color: "#fff",
-                fontWeight: 800,
-                cursor: !canSave || saving ? "not-allowed" : "pointer",
-              }}
-            >
-              {saving ? "Saving..." : "Save Settings"}
-            </button>
+            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+              <button
+                onClick={handleSave}
+                disabled={!canSave || saving}
+                style={{
+                  flex: 1,
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: !canSave || saving ? "rgba(120,90,255,0.25)" : "#5a3dff",
+                  color: "#fff",
+                  fontWeight: 800,
+                  cursor: !canSave || saving ? "not-allowed" : "pointer",
+                }}
+              >
+                {saving ? "Saving..." : "Save Settings"}
+              </button>
+              <button
+                onClick={async () => {
+                  setStatus("");
+                  if (!endpoint || !anonKey || !adminPassword.trim()) {
+                    setStatus("❌ Missing configuration or admin password.");
+                    return;
+                  }
+                  setSaving(true);
+                  setStatus("Stopping bot...");
+                  try {
+                    const res = await fetch(endpoint, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${anonKey}`,
+                        apikey: anonKey,
+                        "x-admin-password": adminPassword,
+                      },
+                      body: JSON.stringify({
+                        discord_webhook_url: webhookUrl,
+                        giphy_api_key: giphyKey,
+                        enabled: false,
+                        combo_interval_minutes: interval,
+                      }),
+                    });
+                    const raw = await res.text();
+                    let data: any = {};
+                    try { data = JSON.parse(raw); } catch {}
+                    if (res.ok) {
+                      setEnabled(false);
+                      setStatus("✅ Bot stopped successfully");
+                    } else {
+                      const msg = data?.error || data?.message || raw || `Request failed (HTTP ${res.status})`;
+                      setStatus(`❌ ${msg}`);
+                    }
+                  } catch (err: any) {
+                    setStatus(`❌ Network error: ${err?.message || String(err)}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={!canSave || saving}
+                style={{
+                  flex: 1,
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: !canSave || saving ? "rgba(255,70,70,0.15)" : "rgba(255,70,70,0.3)",
+                  color: "#ff9b9b",
+                  fontWeight: 800,
+                  cursor: !canSave || saving ? "not-allowed" : "pointer",
+                }}
+              >
+                Stop Bot
+              </button>
+            </div>
 
             {status && (
               <div
