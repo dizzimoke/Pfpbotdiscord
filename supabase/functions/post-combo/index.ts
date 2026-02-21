@@ -25,8 +25,8 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ status: 'disabled' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    if (!config.discord_webhook_url || !config.giphy_api_key) {
-      throw new Error('Missing configuration');
+    if (!config.discord_webhook_url) {
+      throw new Error('Missing configuration: discord_webhook_url');
     }
 
     // 3. Load Job State
@@ -49,48 +49,56 @@ Deno.serve(async (req) => {
       const styleTag = styleTags[currentStyleIndex];
       logs.push(`Refilling for style: ${styleTag}`);
 
-      // Helper to fetch GIPHY
-      const fetchGiphy = async (type: 'icon' | 'banner') => {
-        const query = type === 'icon' 
-          ? `anime pfp gif ${styleTag} -meme -funny -reaction -cat -dog -real -irl`
-          : `anime banner ${styleTag} -meme -funny -reaction -real -irl`;
+      // Helper to fetch Danbooru
+      const fetchDanbooru = async (type: 'icon' | 'banner') => {
+        const formattedStyle = styleTag.replace(/ /g, '_');
+        const baseTags = type === 'icon' 
+          ? `rating:safe solo portrait anime highres`
+          : `rating:safe anime landscape wide highres`;
         
-        const offset = Math.floor(Math.random() * 50);
-        const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${config.giphy_api_key}&q=${encodeURIComponent(query)}&limit=50&offset=${offset}&rating=pg-13&lang=en`);
+        const query = `${baseTags} ${formattedStyle}`;
+        const page = Math.floor(Math.random() * 5) + 1;
+        
+        let res = await fetch(`https://danbooru.donmai.us/posts.json?tags=${encodeURIComponent(query)}&limit=50&page=${page}`);
+        
+        // Danbooru limits anonymous users to 2 tags. Fallback if the strict query is rejected (422).
+        if (!res.ok) {
+          const fallbackQuery = type === 'icon' ? `rating:safe solo` : `rating:safe landscape`;
+          res = await fetch(`https://danbooru.donmai.us/posts.json?tags=${encodeURIComponent(fallbackQuery)}&limit=50&page=${page}`);
+        }
+        
+        if (!res.ok) return [];
+        
         const data = await res.json();
-        return data.data || [];
+        return Array.isArray(data) ? data : [];
       };
 
       const [icons, banners] = await Promise.all([
-        (iconCount || 0) < 20 ? fetchGiphy('icon') : Promise.resolve([]),
-        (bannerCount || 0) < 20 ? fetchGiphy('banner') : Promise.resolve([])
+        (iconCount || 0) < 20 ? fetchDanbooru('icon') : Promise.resolve([]),
+        (bannerCount || 0) < 20 ? fetchDanbooru('banner') : Promise.resolve([])
       ]);
 
       // Filter & Insert
       const processItems = async (items: any[], type: 'icon' | 'banner') => {
         const validItems = [];
         for (const item of items) {
-          // Filter
-          const text = ((item.title||"") + (item.username||"") + (item.slug||"")).toLowerCase();
-          const blocked = ["meme","reaction","funny","tiktok","instagram","youtube","movie","tv","real","irl","cat","dog"];
-          const required = ["anime","manga","waifu","chibi","kawaii","otaku","anime girl","anime boy"];
-          
-          if (blocked.some(k => text.includes(k))) continue;
-          if (!required.some(k => text.includes(k))) continue;
+          const url = item.large_file_url || item.file_url;
+          if (!url) continue;
 
-          const img = item.images?.original;
-          if (!img?.width || !img?.height) continue;
+          const width = item.image_width;
+          const height = item.image_height;
+          if (!width || !height) continue;
           
-          const ratio = parseInt(img.width) / parseInt(img.height);
+          const ratio = width / height;
           if (type === 'icon' && (ratio < 0.85 || ratio > 1.15)) continue;
           if (type === 'banner' && ratio < 1.7) continue;
 
           validItems.push({
             type,
             style_tag: styleTag,
-            url: img.url,
-            width: parseInt(img.width),
-            height: parseInt(img.height)
+            url: url,
+            width: width,
+            height: height
           });
         }
         
@@ -110,24 +118,20 @@ Deno.serve(async (req) => {
     }
 
     // 5. Pick Combo
-    // Try to find matching style first
     const { data: icon } = await supabase.from('media_queue').select('*').eq('type', 'icon').limit(1).single();
     
     if (!icon) {
       return new Response(JSON.stringify({ status: 'empty_queue', logs }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Try to find banner with same style
     let { data: banner } = await supabase.from('media_queue').select('*').eq('type', 'banner').eq('style_tag', icon.style_tag).limit(1).single();
     
-    // Fallback to any banner
     if (!banner) {
        const { data: anyBanner } = await supabase.from('media_queue').select('*').eq('type', 'banner').limit(1).single();
        banner = anyBanner;
     }
 
     if (!banner) {
-       // Discard icon if no banner available to maintain combo
        await supabase.from('media_queue').delete().eq('id', icon.id);
        return new Response(JSON.stringify({ status: 'missing_banner', logs }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
