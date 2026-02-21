@@ -24,16 +24,15 @@ Deno.serve(async (req) => {
     )
 
     // 3. Update Settings
-    const { discord_webhook_url, giphy_api_key, enabled, combo_interval_minutes } = await req.json();
+    const { discord_webhook_url, enabled, combo_interval_minutes } = await req.json();
 
     // Validate inputs
-    if (!discord_webhook_url || !giphy_api_key) {
+    if (!discord_webhook_url) {
       throw new Error('Missing required fields');
     }
 
     const updates = [
       { key: 'discord_webhook_url', value: discord_webhook_url },
-      { key: 'giphy_api_key', value: giphy_api_key },
       { key: 'enabled', value: String(enabled) },
       { key: 'combo_interval_minutes', value: String(combo_interval_minutes) }
     ];
