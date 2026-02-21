@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 
 export default function App() {
   const [webhookUrl, setWebhookUrl] = useState("");
-  const [giphyKey, setGiphyKey] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [interval, setInterval] = useState(2);
@@ -20,10 +19,9 @@ export default function App() {
         anonKey &&
         adminPassword.trim().length > 0 &&
         webhookUrl.trim().length > 0 &&
-        giphyKey.trim().length > 0 &&
         interval >= 1
     );
-  }, [endpoint, anonKey, adminPassword, webhookUrl, giphyKey, interval]);
+  }, [endpoint, anonKey, adminPassword, webhookUrl, interval]);
 
   const handleSave = async () => {
     setStatus("");
@@ -48,23 +46,17 @@ export default function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-
-          // ✅ REQUIRED for calling Supabase Edge Functions from the browser
           Authorization: `Bearer ${anonKey}`,
           apikey: anonKey,
-
-          // ✅ Your extra protection
           "x-admin-password": adminPassword,
         },
         body: JSON.stringify({
           discord_webhook_url: webhookUrl,
-          giphy_api_key: giphyKey,
           enabled,
           combo_interval_minutes: interval,
         }),
       });
 
-      // Read raw text first so we can show real errors even if it's not JSON
       const raw = await res.text();
       let data: any = {};
       try {
@@ -76,7 +68,6 @@ export default function App() {
       if (res.ok) {
         setStatus("✅ Settings saved! Bot will run on next schedule.");
       } else {
-        // Prefer backend error message
         const msg =
           data?.error ||
           data?.message ||
@@ -107,7 +98,7 @@ export default function App() {
           Anime Auto-Poster
         </h1>
         <p style={{ opacity: 0.7, marginTop: 0 }}>
-          Automated Discord webhook bot for anime GIFs & banners
+          Automated Discord webhook bot for anime icons & banners
         </p>
 
         <div
@@ -141,17 +132,6 @@ export default function App() {
                 value={webhookUrl}
                 onChange={(e) => setWebhookUrl(e.target.value)}
                 placeholder="https://discord.com/api/webhooks/..."
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, opacity: 0.7 }}>GIPHY API KEY</label>
-              <input
-                type="password"
-                value={giphyKey}
-                onChange={(e) => setGiphyKey(e.target.value)}
-                placeholder="GIPHY API Key"
                 style={inputStyle}
               />
             </div>
@@ -244,7 +224,6 @@ export default function App() {
                       },
                       body: JSON.stringify({
                         discord_webhook_url: webhookUrl,
-                        giphy_api_key: giphyKey,
                         enabled: false,
                         combo_interval_minutes: interval,
                       }),
