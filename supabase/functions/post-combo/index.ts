@@ -11,13 +11,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // 1. Init Supabase (Service Role)
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 2. Load Settings
     const { data: settings } = await supabase.from('bot_settings').select('*');
     const config = settings?.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
 
@@ -29,42 +27,36 @@ Deno.serve(async (req) => {
       throw new Error('Missing configuration: discord_webhook_url');
     }
 
-    // 3. Load Job State
     const { data: jobState } = await supabase.from('job_state').select('value').eq('key', 'rotation').single();
     let currentStyleIndex = jobState?.value?.last_style_index || 0;
 
     const styleTags = [
-      "dark anime", "white anime", "protagonist anime", "anime aesthetic",
-      "black and white anime", "cool anime", "cute anime", "anime profile", "anime header"
+      "animated", "dark_theme", "dynamic_lighting", "aesthetic",
+      "cyberpunk", "neon_lights"
     ];
 
-    // 4. Check Queue & Refill
     const { count: iconCount } = await supabase.from('media_queue').select('*', { count: 'exact', head: true }).eq('type', 'icon');
     const { count: bannerCount } = await supabase.from('media_queue').select('*', { count: 'exact', head: true }).eq('type', 'banner');
 
     const logs: string[] = [];
 
-    // Refill Logic
     if ((iconCount || 0) < 20 || (bannerCount || 0) < 20) {
       const styleTag = styleTags[currentStyleIndex];
       logs.push(`Refilling for style: ${styleTag}`);
 
-      // Helper to fetch Danbooru
-      const fetchDanbooru = async (type: 'icon' | 'banner') => {
-        const formattedStyle = styleTag.replace(/ /g, '_');
+      const fetchSafebooru = async (type: 'icon' | 'banner') => {
         const baseTags = type === 'icon' 
-          ? `rating:safe solo portrait anime highres`
-          : `rating:safe anime landscape wide highres`;
+          ? `animated solo portrait highres`
+          : `animated landscape wide highres`;
         
-        const query = `${baseTags} ${formattedStyle}`;
+        const query = `${baseTags} ${styleTag}`;
         const page = Math.floor(Math.random() * 5) + 1;
         
-        let res = await fetch(`https://danbooru.donmai.us/posts.json?tags=${encodeURIComponent(query)}&limit=50&page=${page}`);
+        let res = await fetch(`https://safebooru.donmai.us/posts.json?tags=${encodeURIComponent(query)}&limit=50&page=${page}`);
         
-        // Danbooru limits anonymous users to 2 tags. Fallback if the strict query is rejected (422).
         if (!res.ok) {
-          const fallbackQuery = type === 'icon' ? `rating:safe solo` : `rating:safe landscape`;
-          res = await fetch(`https://danbooru.donmai.us/posts.json?tags=${encodeURIComponent(fallbackQuery)}&limit=50&page=${page}`);
+          const fallbackQuery = type === 'icon' ? `animated solo` : `animated landscape`;
+          res = await fetch(`https://safebooru.donmai.us/posts.json?tags=${encodeURIComponent(fallbackQuery)}&limit=50&page=${page}`);
         }
         
         if (!res.ok) return [];
@@ -74,11 +66,10 @@ Deno.serve(async (req) => {
       };
 
       const [icons, banners] = await Promise.all([
-        (iconCount || 0) < 20 ? fetchDanbooru('icon') : Promise.resolve([]),
-        (bannerCount || 0) < 20 ? fetchDanbooru('banner') : Promise.resolve([])
+        (iconCount || 0) < 20 ? fetchSafebooru('icon') : Promise.resolve([]),
+        (bannerCount || 0) < 20 ? fetchSafebooru('banner') : Promise.resolve([])
       ]);
 
-      // Filter & Insert
       const processItems = async (items: any[], type: 'icon' | 'banner') => {
         const validItems = [];
         for (const item of items) {
@@ -112,12 +103,10 @@ Deno.serve(async (req) => {
       const newBanners = await processItems(banners, 'banner');
       logs.push(`Refilled: ${newIcons} icons, ${newBanners} banners`);
 
-      // Rotate Style
       currentStyleIndex = (currentStyleIndex + 1) % styleTags.length;
       await supabase.from('job_state').upsert({ key: 'rotation', value: { last_style_index: currentStyleIndex } });
     }
 
-    // 5. Pick Combo
     const { data: icon } = await supabase.from('media_queue').select('*').eq('type', 'icon').limit(1).single();
     
     if (!icon) {
@@ -136,7 +125,6 @@ Deno.serve(async (req) => {
        return new Response(JSON.stringify({ status: 'missing_banner', logs }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 6. Post to Discord
     const postWebhook = async (item: any) => {
       const payload = {
         embeds: [{
@@ -166,10 +154,9 @@ Deno.serve(async (req) => {
     };
 
     await postWebhook(icon);
-    await new Promise(r => setTimeout(r, 1500)); // Wait 1.5s
+    await new Promise(r => setTimeout(r, 1500));
     await postWebhook(banner);
 
-    // 7. Cleanup
     await supabase.from('used_urls').insert([{ url: icon.url }, { url: banner.url }]);
     await supabase.from('media_queue').delete().in('id', [icon.id, banner.id]);
 
